@@ -109,7 +109,7 @@ const ClientLogin = () => {
               />
 
               <h2 className="fw-bold mb-2" style={{ color: "#00A3E0" }}>
-                Welcome Back to SCIP Portal
+                Welcome Back to NACK Portal
               </h2>
 
               <p className="text-muted fs-5">

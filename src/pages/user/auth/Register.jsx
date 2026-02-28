@@ -85,7 +85,7 @@ const ClientRegister = () => {
               />
 
               <h2 className="fw-bold mb-2" style={{ color: "#00A3E0" }}>
-                Welcome to SCIP Client Portal
+                Welcome to NACK Client Portal
               </h2>
               <p className="text-muted fs-5">
                 Create your client account to access invoices & payment history.
@@ -122,7 +122,7 @@ const ClientRegister = () => {
                       Create Your Account
                     </h3>
 
-                    <p className="text-muted">Join the SCIP client portal today.</p>
+                    <p className="text-muted">Join the NACK client portal today.</p>
                   </div>
 
                   <Form onSubmit={handleSubmit(onSubmit)}>

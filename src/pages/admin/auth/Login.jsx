@@ -123,7 +123,7 @@ const Login = () => {
                 </svg>
               </motion.div>
 
-              <h2 className="fw-bold mt-4">Welcome to SCIP</h2>
+              <h2 className="fw-bold mt-4">Welcome to NACK</h2>
 
               <p className="opacity-75">
                 Secure digital signing & smart investment platform.
@@ -154,7 +154,7 @@ const Login = () => {
                     {/* LOGO */}
                     <motion.img
                       src="/assets/images/logo-light.png"
-                      alt="SCIP"
+                      alt="NACK"
                       style={{ height: "40px" }}
                       className="mb-4"
                       initial={{ opacity: 0, scale: 0.6 }}

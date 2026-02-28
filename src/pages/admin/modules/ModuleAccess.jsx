@@ -155,8 +155,8 @@ const ModuleAccess = () => {
                     value={userOptions.find((opt) => opt.value === selectedUser) || null}
                     onChange={(option) => handleUserChange(option?.value)}
                     placeholder="Select User"
-                    className="scip-react-select"
-                    classNamePrefix="scip-rs"
+                    className="NACK-react-select"
+                    classNamePrefix="NACK-rs"
                   />
                 )}
               </Col>

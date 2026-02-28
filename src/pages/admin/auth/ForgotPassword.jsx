@@ -108,7 +108,7 @@ const ForgotPassword = () => {
                   <div className="text-center mb-4">
                     <motion.img
                       src="/assets/images/logo-light.png"
-                      alt="SCIP"
+                      alt="NACK"
                       style={{ height: "40px" }}
                       className="mb-4"
                       initial={{ opacity: 0, scale: 0.6 }}

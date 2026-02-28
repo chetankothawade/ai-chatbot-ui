@@ -229,7 +229,7 @@ export default function FormField({
                                     !isReadonly && field.onChange(ids.length ? ids : []);
                                 }}
                                 placeholder={placeholder || "-- Select --"}
-                                className={`scip-reacte-slect ${error ? "is-invalid" : ""}`}
+                                className={`NACK-reacte-slect ${error ? "is-invalid" : ""}`}
                             />
                         );
                     }}
@@ -258,8 +258,8 @@ export default function FormField({
                             placeholder={placeholder || "Select"}
                             isDisabled={disabled}
                             onChange={(opt) => !isReadonly && field.onChange(opt?.value ?? null)}
-                            className={`scip-reacte-slect ${error ? "is-invalid" : ""}`}
-                            classNamePrefix="scip-rs"
+                            className={`NACK-reacte-slect ${error ? "is-invalid" : ""}`}
+                            classNamePrefix="NACK-rs"
                         />
                     )}
                 />

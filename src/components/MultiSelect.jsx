@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import ReactSelect, { components } from "react-select";
 
-const MultiSelect = ({ placeholder = "-- Select --", className = "scip-react-select", classNamePrefix = "scip-rs", ...props }) => {
+const MultiSelect = ({ placeholder = "-- Select --", className = "NACK-react-select", classNamePrefix = "NACK-rs", ...props }) => {
 
     const [selectInput, setSelectInput] = useState("");
     const isAllSelected = useRef(false);

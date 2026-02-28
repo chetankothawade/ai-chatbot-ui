@@ -9,11 +9,11 @@ const Footer = () => {
         <div className="row align-items-center">
 
           <div className="col-sm-6">
-            © Copyrights {currentYear} {import.meta.env.VITE_SITE_NAME || "SCIP"}. All rights reserved.
+            © Copyrights {currentYear} {import.meta.env.VITE_SITE_NAME || "NACK"}. All rights reserved.
           </div>
 
           <div className="col-sm-6 text-end d-none d-sm-block">
-            Design &amp; Developed by {import.meta.env.VITE_SITE_NAME || "SCIP"}
+            Design &amp; Developed by {import.meta.env.VITE_SITE_NAME || "NACK"}
           </div>
 
         </div>
