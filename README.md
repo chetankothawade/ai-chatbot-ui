@@ -53,7 +53,7 @@ Optional keys currently used in project:
 
 ```env
 VITE_ENV_NAME=development
-VITE_SITE_NAME=SCIP
+VITE_SITE_NAME=CANK
 ```
 
 ## 5. Setup and Run
