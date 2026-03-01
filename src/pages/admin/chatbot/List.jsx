@@ -16,7 +16,6 @@ import {
   Spinner,
   InputGroup,
   Dropdown,
-  Modal,
   OverlayTrigger,
   Tooltip,
 } from "react-bootstrap";
@@ -24,7 +23,8 @@ import {
 import LayoutWrapper from "../components/LayoutWrapper";
 import chatbotService from "../../../services/chatbotService";
 import userService from "../../../services/userService";
-import FormField from "../../../components/FormFields/FormField";
+import AddParticipantModal from "./modals/AddParticipantModal";
+import RemoveParticipantModal from "./modals/RemoveParticipantModal";
 
 const CHAT_FILTERS = {
   ALL: "all",
@@ -1308,123 +1308,42 @@ const Chatbot = () => {
       )
       }
 
-      <Modal
+      <AddParticipantModal
         show={showAddParticipantModal}
         onHide={() => {
           if (addingParticipant) return;
           setShowAddParticipantModal(false);
           reset({ user_id: null });
         }}
-        centered
-      >
-        <Form onSubmit={handleSubmit(handleAddParticipantSubmit)}>
-          <Modal.Header closeButton>
-            <Modal.Title>Add Participant</Modal.Title>
-          </Modal.Header>
-          <Modal.Body>
-            <Row>
-              {addParticipantFields.map((field) => (
-                <FormField
-                  key={field.name}
-                  field={field}
-                  control={control}
-                  register={register}
-                  errors={errors}
-                  touchedFields={touchedFields}
-                />
-              ))}
-            </Row>
-          </Modal.Body>
-          <Modal.Footer>
-            <ButtonTooltip id="tt-add-participant-cancel" title="Close without adding participant">
-              <Button
-                variant="outline-secondary"
-                onClick={() => {
-                  if (addingParticipant) return;
-                  setShowAddParticipantModal(false);
-                  reset({ user_id: null });
-                }}
-                disabled={addingParticipant}
-              >
-                Cancel
-              </Button>
-            </ButtonTooltip>
-            <ButtonTooltip id="tt-add-participant-submit" title="Add selected user as participant">
-              <Button type="submit" variant="primary" disabled={loadingParticipantUsers || addingParticipant}>
-                {addingParticipant ? "Adding..." : "Add"}
-              </Button>
-            </ButtonTooltip>
-          </Modal.Footer>
-        </Form>
-      </Modal>
-
-      <Modal
+        handleSubmit={handleSubmit}
+        onSubmit={handleAddParticipantSubmit}
+        control={control}
+        register={register}
+        errors={errors}
+        touchedFields={touchedFields}
+        fields={addParticipantFields}
+        adding={addingParticipant}
+        reset={reset}
+      />
+      <RemoveParticipantModal
         show={showRemoveParticipantModal}
         onHide={() => {
           if (removingParticipant) return;
           setShowRemoveParticipantModal(false);
           resetRemove({ user_id: null });
         }}
-        centered
-      >
-        <Form onSubmit={handleRemoveSubmit(handleRemoveParticipantSubmit)}>
-          <Modal.Header closeButton>
-            <Modal.Title>Remove Participant</Modal.Title>
-          </Modal.Header>
-          <Modal.Body>
-            <Row>
-              {removeParticipantFields.map((field) => (
-                <FormField
-                  key={field.name}
-                  field={field}
-                  control={removeControl}
-                  register={removeRegister}
-                  errors={removeErrors}
-                  touchedFields={removeTouchedFields}
-                />
-              ))}
-            </Row>
-          </Modal.Body>
-          <Modal.Footer>
-            <ButtonTooltip id="tt-remove-participant-cancel" title="Close without removing participant">
-              <Button
-                variant="outline-secondary"
-                onClick={() => {
-                  if (removingParticipant) return;
-                  setShowRemoveParticipantModal(false);
-                  resetRemove({ user_id: null });
-                }}
-                disabled={removingParticipant}
-              >
-                Cancel
-              </Button>
-            </ButtonTooltip>
-            <ButtonTooltip id="tt-remove-participant-submit" title="Remove selected participant from this chat">
-              <Button type="submit" variant="danger" disabled={loadingSessionParticipants || removingParticipant}>
-                {removingParticipant ? "Removing..." : "Remove"}
-              </Button>
-            </ButtonTooltip>
-          </Modal.Footer>
-        </Form>
-      </Modal>
-    </LayoutWrapper >
+        handleSubmit={handleRemoveSubmit}
+        onSubmit={handleRemoveParticipantSubmit}
+        control={removeControl}
+        register={removeRegister}
+        errors={removeErrors}
+        touchedFields={removeTouchedFields}
+        fields={removeParticipantFields}
+        removing={removingParticipant}
+        reset={resetRemove}
+      />
+    </LayoutWrapper>
   );
 };
 
 export default Chatbot;
-
-
-
-
-
-// Markdown rendering (code blocks like ChatGPT)
-// 👉 Redux state (enterprise level)
-// 👉 Chat titles auto-generate
-// 👉 Token usage tracking
-// 👉 File upload (PDF AI)
-
-
-
-//Send Message -
-// This function sends a message and waits for the full response.
-// You can replace it with streamMessage for streaming responses if your backend supports it.
