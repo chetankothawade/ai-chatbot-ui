@@ -23,6 +23,7 @@ import {
 import LayoutWrapper from "../components/LayoutWrapper";
 import chatbotService from "../../../services/chatbotService";
 import userService from "../../../services/userService";
+import useInfiniteScrollPagination from "../../../hooks/UseInfiniteScrollPagination";
 import AddParticipantModal from "./modals/AddParticipantModal";
 import RemoveParticipantModal from "./modals/RemoveParticipantModal";
 
@@ -164,7 +165,6 @@ const Chatbot = () => {
   // Shared panel height keeps sidebar and chat area visually aligned.
   const panelHeight = "clamp(520px, calc(100dvh - 250px), 760px)";
 
-  const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
 
   const [chats, setChats] = useState([]);
@@ -191,17 +191,12 @@ const Chatbot = () => {
   const [addingParticipant, setAddingParticipant] = useState(false);
   const [removingParticipant, setRemovingParticipant] = useState(false);
 
-  const [nextCursor, setNextCursor] = useState(null);
-  const [hasMore, setHasMore] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-
   const bottomRef = useRef(null);
   const streamControllerRef = useRef(null);
   const typingIntervalRef = useRef(null);
   const typingBufferRef = useRef("");
   const draftAssistantIdRef = useRef(null);
   const chatListRef = useRef(null);
-  const appendingRef = useRef(false);
   const {
     control,
     register,
@@ -270,55 +265,35 @@ const Chatbot = () => {
     }, 20);
   }, [appendAssistantText]);
 
-
-  const loadChats = useCallback(async (cursor = null, append = false) => {
-    if (append && (!cursor || appendingRef.current)) return;
-
-    if (append) appendingRef.current = true;
-
-    if (append) setLoadingMore(true);
-    else setLoading(true);
-
+  const loadChatsPage = useCallback(async ({ cursor = null, append = false } = {}) => {
     try {
       const response = await chatbotService.listSessions(cursor ? { cursor } : {});
-
       const payload = response?.data;
-
       const newChats = normalizeChats(payload);
       const pagination = normalizePagination(payload);
 
       setChats((prev) => (append ? [...prev, ...newChats] : newChats));
 
-      const next = pagination?.next_cursor;
-      setNextCursor(next);
-      setHasMore(!!next);
+      return { nextCursor: pagination?.next_cursor ?? null };
     } catch {
       toast.error("Failed to load chats");
-      if (!append) {
-        setChats([]);
-        setNextCursor(null);
-        setHasMore(false);
-      }
-    } finally {
-      if (append) appendingRef.current = false;
-      setLoading(false);
-      setLoadingMore(false);
+      if (!append) setChats([]);
+      throw new Error("Failed to load chats");
     }
   }, []);
 
-  //Scroll Handler:
-  const handleScroll = useCallback(() => {
-    if (chatSearch.trim()) return;
-    const el = chatListRef.current;
-    if (!el || loadingMore || !hasMore) return;
-
-    const { scrollTop, scrollHeight, clientHeight } = el;
-
-    // Load more when near bottom
-    if (scrollTop + clientHeight >= scrollHeight - 50) {
-      loadChats(nextCursor, true);
-    }
-  }, [chatSearch, nextCursor, loadingMore, hasMore, loadChats]);
+  const {
+    loading,
+    loadingMore,
+    hasMore,
+    handleScroll,
+    loadFirstPage,
+  } = useInfiniteScrollPagination({
+    containerRef: chatListRef,
+    onLoadPage: loadChatsPage,
+    disabled: Boolean(chatSearch.trim()),
+    itemsLength: chats.length,
+  });
 
   // Fetches a selected chat's messages and resets inline rename mode.
   const loadChat = useCallback(async (chatId) => {
@@ -410,7 +385,7 @@ const Chatbot = () => {
         },
       });
 
-      loadChats();
+      loadFirstPage();
     } catch (error) {
       if (error?.name !== "CanceledError" && error?.name !== "AbortError") {
         toast.error("Streaming failed");
@@ -432,7 +407,7 @@ const Chatbot = () => {
       setActiveChat(nextChat || null);
       setSelectedModel(nextChat?.model || "");
       setMessages([]);
-      await loadChats();
+      await loadFirstPage();
     } catch {
       toast.error("Failed to create chat");
     }
@@ -826,8 +801,8 @@ const Chatbot = () => {
 
   // Initial load.
   useEffect(() => {
-    loadChats();
-  }, [loadChats]);
+    loadFirstPage();
+  }, [loadFirstPage]);
 
   // Keeps local model selector aligned when active chat changes.
   useEffect(() => {
@@ -857,17 +832,6 @@ const Chatbot = () => {
 
     return () => clearTimeout(timer);
   }, [chatSearch]);
-
-  // If first page does not overflow, keep fetching next pages until it can scroll.
-  useEffect(() => {
-    if (chatSearch.trim()) return;
-    const el = chatListRef.current;
-    if (!el || loading || loadingMore || !hasMore || !nextCursor) return;
-
-    if (el.scrollHeight <= el.clientHeight) {
-      loadChats(nextCursor, true);
-    }
-  }, [chatSearch, chats.length, hasMore, loading, loadingMore, nextCursor, loadChats]);
 
   // Keeps latest message in view while chatting/streaming.
   useEffect(() => {
