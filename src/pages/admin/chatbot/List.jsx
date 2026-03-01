@@ -191,6 +191,7 @@ const Chatbot = () => {
   const [addingParticipant, setAddingParticipant] = useState(false);
   const [removingParticipant, setRemovingParticipant] = useState(false);
 
+  // Refs for managing scroll, streaming, and typing effects.
   const bottomRef = useRef(null);
   const streamControllerRef = useRef(null);
   const typingIntervalRef = useRef(null);
@@ -265,6 +266,7 @@ const Chatbot = () => {
     }, 20);
   }, [appendAssistantText]);
 
+  // Loads a page of chats and manages pagination state based on backend response.
   const loadChatsPage = useCallback(async ({ cursor = null, append = false } = {}) => {
     try {
       const response = await chatbotService.listSessions(cursor ? { cursor } : {});
@@ -282,6 +284,7 @@ const Chatbot = () => {
     }
   }, []);
 
+  // Uses the infinite scroll hook to manage loading more chats as the user scrolls.
   const {
     loading,
     loadingMore,
@@ -1032,14 +1035,14 @@ const Chatbot = () => {
 
                                       <Dropdown.Menu>
                                         <Dropdown.Item onClick={() => handleTogglePin(chat)}>
-                                          {isPinned ? "Unpin" : "Pin"}
+                                          <i className="ri-pushpin-line me-1" />{isPinned ? "Unpin" : "Pin"}
                                         </Dropdown.Item>
                                         <Dropdown.Item onClick={() => handleRenameStart(chat)}>
-                                          Rename
+                                          <i className="ri-edit-2-line me-1" />Rename
                                         </Dropdown.Item>
                                         <Dropdown.Divider />
                                         <Dropdown.Item className="text-danger" onClick={() => handleDeleteChat(chat.id)}>
-                                          Delete
+                                          <i className="ri-delete-bin-line me-1" />Delete
                                         </Dropdown.Item>
                                       </Dropdown.Menu>
                                     </Dropdown>
@@ -1065,7 +1068,7 @@ const Chatbot = () => {
                 </div>
               </Card>
             </Col>
-
+            {/* // The main chat panel with messages and controls. */}
             <Col lg={9} md={8} className="d-flex">
               <Card className="shadow-sm d-flex flex-column w-100 user-chat" style={{ height: panelHeight }}>
                 <Card.Header className="bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
@@ -1271,7 +1274,7 @@ const Chatbot = () => {
         </>
       )
       }
-
+      {/* // Modals for adding/removing participants from the current chat session. */}
       <AddParticipantModal
         show={showAddParticipantModal}
         onHide={() => {

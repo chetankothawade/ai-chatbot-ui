@@ -18,6 +18,7 @@ const useInfiniteScrollPagination = ({
   const [hasMore, setHasMore] = useState(initialHasMore);
   const appendingRef = useRef(false);
 
+  // Load a page of items. If `append` is true, it will append to the existing list; otherwise, it will replace it.
   const loadPage = useCallback(
     async ({ cursor = null, append = false } = {}) => {
       if (append && (!cursor || appendingRef.current)) return false;
