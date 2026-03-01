@@ -186,6 +186,7 @@ const Chatbot = () => {
   const [renamingChatId, setRenamingChatId] = useState(null);
   const [renameValue, setRenameValue] = useState("");
   const [hoveredChatId, setHoveredChatId] = useState(null);
+  const [hoveredMessageKey, setHoveredMessageKey] = useState(null);
   const [copiedCodeKey, setCopiedCodeKey] = useState("");
   const [blinkOn, setBlinkOn] = useState(true);
   const [selectedModel, setSelectedModel] = useState("");
@@ -1035,8 +1036,11 @@ const Chatbot = () => {
                                   >
                                     <Dropdown align="end" drop="end">
                                       <ButtonTooltip id={`tt-chat-actions-${chat.id}`} title="Open chat actions">
-                                        <Dropdown.Toggle as="button" className="btn btn-sm btn-light border chat-more-toggle">
-                                          <i className="ri-more-2-fill" />
+                                        <Dropdown.Toggle
+                                          as="button"
+                                          className="btn btn-sm p-0 border-0 bg-transparent shadow-none chat-more-toggle"
+                                        >
+                                          <i className="ri-more-2-fill fs-4" />
                                         </Dropdown.Toggle>
                                       </ButtonTooltip>
 
@@ -1136,48 +1140,23 @@ const Chatbot = () => {
                           const hasMessageId = Boolean(
                             msg?.id && !String(msg.id).startsWith("draft-")
                           );
+                          const messageKey = msg.id || index;
+                          const showMessageActions = hoveredMessageKey === messageKey;
 
                           return (
                             <div
-                              key={msg.id || index}
+                              key={messageKey}
                               className={`d-flex mb-3 ${msg.role === "user" ? "justify-content-end" : "justify-content-start"}`}
+                              onMouseEnter={() => setHoveredMessageKey(messageKey)}
+                              onMouseLeave={() =>
+                                setHoveredMessageKey((prev) => (prev === messageKey ? null : prev))
+                              }
                             >
                               <div
                                 className={`p-3 rounded-3 shadow-sm ${msg.role === "user" ? "bg-soft-primary" : "bg-light"}`}
                                 style={{ maxWidth: "75%" }}
                               >
-                                {hasMessageId && (
-                                  <div className="d-flex justify-content-end mb-2">
-                                    <Dropdown align="end" drop="end">
-                                      <ButtonTooltip id={`tt-message-actions-${msg.id || index}`} title="Open message actions">
-                                        <Dropdown.Toggle as="button" className="btn btn-sm btn-light border chat-more-toggle">
-                                          <i className="ri-more-2-fill" />
-                                        </Dropdown.Toggle>
-                                      </ButtonTooltip>
-                                      <Dropdown.Menu className="shadow-sm border-0 py-2">
-                                        {msg.role === "assistant" && (
-                                          <Dropdown.Item onClick={() => handleRegenerateMessage(msg.id)}>
-                                            <i className="ri-refresh-line me-2 text-muted" />
-                                            Regenerate
-                                          </Dropdown.Item>
-                                        )}
-                                        <Dropdown.Item onClick={() => handleViewMetadata(msg.id)}>
-                                          <i className="ri-information-line me-2 text-muted" />
-                                          View Metadata
-                                        </Dropdown.Item>
-                                        <Dropdown.Item onClick={() => handleSaveMetadata(msg.id)}>
-                                          <i className="ri-save-line me-2 text-muted" />
-                                          Save Metadata
-                                        </Dropdown.Item>
-                                        <Dropdown.Divider />
-                                        <Dropdown.Item className="text-danger" onClick={() => handleDeleteMessage(msg.id)}>
-                                          <i className="ri-delete-bin-line me-2" />
-                                          Delete Message
-                                        </Dropdown.Item>
-                                      </Dropdown.Menu>
-                                    </Dropdown>
-                                  </div>
-                                )}
+                                
                               {msg.role === "assistant" ? (
                                 <ReactMarkdown
                                   components={{
@@ -1231,6 +1210,50 @@ const Chatbot = () => {
                                 <span className="ms-1 fw-bold text-muted">{blinkOn ? "|" : " "}</span>
                               )}
                               </div>
+
+                              {/*  Only show message actions if the message has been persisted and has a valid ID. */}
+                              {hasMessageId && (
+                                  <div
+                                    className="d-flex justify-content-end mb-2 ms-2"
+                                    style={{
+                                      opacity: showMessageActions ? 1 : 0,
+                                      pointerEvents: showMessageActions ? "auto" : "none",
+                                      transition: "opacity 0.15s ease-in-out",
+                                    }}
+                                  >
+                                    <Dropdown align="end" drop="end">
+                                      <ButtonTooltip id={`tt-message-actions-${msg.id || index}`} title="Open message actions">
+                                        <Dropdown.Toggle
+                                          as="button"
+                                          className="btn btn-sm p-0 border-0 bg-transparent shadow-none chat-more-toggle"
+                                        >
+                                          <i className="ri-more-2-fill fs-4" />
+                                        </Dropdown.Toggle>
+                                      </ButtonTooltip>
+                                      <Dropdown.Menu className="shadow-sm border-0 py-2">
+                                        {msg.role === "assistant" && (
+                                          <Dropdown.Item onClick={() => handleRegenerateMessage(msg.id)}>
+                                            <i className="ri-refresh-line me-2 text-muted" />
+                                            Regenerate
+                                          </Dropdown.Item>
+                                        )}
+                                        <Dropdown.Item onClick={() => handleViewMetadata(msg.id)}>
+                                          <i className="ri-information-line me-2 text-muted" />
+                                          View Metadata
+                                        </Dropdown.Item>
+                                        <Dropdown.Item onClick={() => handleSaveMetadata(msg.id)}>
+                                          <i className="ri-save-line me-2 text-muted" />
+                                          Save Metadata
+                                        </Dropdown.Item>
+                                        <Dropdown.Divider />
+                                        <Dropdown.Item className="text-danger" onClick={() => handleDeleteMessage(msg.id)}>
+                                          <i className="ri-delete-bin-line me-2" />
+                                          Delete Message
+                                        </Dropdown.Item>
+                                      </Dropdown.Menu>
+                                    </Dropdown>
+                                  </div>
+                                )}
                             </div>
                           );
                         })
