@@ -161,6 +161,13 @@ const copyTextToClipboard = async (text) => {
   return fallbackCopyText(text);
 };
 
+// Normalizes abort/cancel detection across fetch/axios/browser variants.
+const isCanceledStreamError = (error) =>
+  error?.name === "CanceledError" ||
+  error?.name === "AbortError" ||
+  error?.code === "ERR_CANCELED" ||
+  String(error?.message || "").toLowerCase() === "canceled";
+
 const Chatbot = () => {
   // Shared panel height keeps sidebar and chat area visually aligned.
   const panelHeight = "clamp(520px, calc(100dvh - 250px), 760px)";
@@ -390,7 +397,7 @@ const Chatbot = () => {
 
       loadFirstPage();
     } catch (error) {
-      if (error?.name !== "CanceledError" && error?.name !== "AbortError") {
+      if (!isCanceledStreamError(error)) {
         toast.error("Streaming failed");
       }
     } finally {
@@ -1026,14 +1033,14 @@ const Chatbot = () => {
                                       transition: "opacity 0.15s ease-in-out",
                                     }}
                                   >
-                                    <Dropdown align="end">
+                                    <Dropdown align="end" drop="end">
                                       <ButtonTooltip id={`tt-chat-actions-${chat.id}`} title="Open chat actions">
                                         <Dropdown.Toggle as="button" className="btn btn-sm btn-light border chat-more-toggle">
                                           <i className="ri-more-2-fill" />
                                         </Dropdown.Toggle>
                                       </ButtonTooltip>
 
-                                      <Dropdown.Menu>
+                                      <Dropdown.Menu className="shadow-sm border-0 py-2">
                                         <Dropdown.Item onClick={() => handleTogglePin(chat)}>
                                           <i className="ri-pushpin-line me-1" />{isPinned ? "Unpin" : "Pin"}
                                         </Dropdown.Item>
@@ -1071,7 +1078,7 @@ const Chatbot = () => {
             {/* // The main chat panel with messages and controls. */}
             <Col lg={9} md={8} className="d-flex">
               <Card className="shadow-sm d-flex flex-column w-100 user-chat" style={{ height: panelHeight }}>
-                <Card.Header className="bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <Card.Header className="bg-white d-flex flex-wrap justify-content-between align-items-center gap-2 ">
                   <div className="fw-semibold text-truncate">
                     {activeChat?.title || (activeChat?.id ? `Chat #${activeChat.id}` : "Conversation")}
                   </div>
@@ -1141,26 +1148,30 @@ const Chatbot = () => {
                               >
                                 {hasMessageId && (
                                   <div className="d-flex justify-content-end mb-2">
-                                    <Dropdown align="end">
+                                    <Dropdown align="end" drop="end">
                                       <ButtonTooltip id={`tt-message-actions-${msg.id || index}`} title="Open message actions">
                                         <Dropdown.Toggle as="button" className="btn btn-sm btn-light border chat-more-toggle">
                                           <i className="ri-more-2-fill" />
                                         </Dropdown.Toggle>
                                       </ButtonTooltip>
-                                      <Dropdown.Menu>
+                                      <Dropdown.Menu className="shadow-sm border-0 py-2">
                                         {msg.role === "assistant" && (
                                           <Dropdown.Item onClick={() => handleRegenerateMessage(msg.id)}>
+                                            <i className="ri-refresh-line me-2 text-muted" />
                                             Regenerate
                                           </Dropdown.Item>
                                         )}
                                         <Dropdown.Item onClick={() => handleViewMetadata(msg.id)}>
+                                          <i className="ri-information-line me-2 text-muted" />
                                           View Metadata
                                         </Dropdown.Item>
                                         <Dropdown.Item onClick={() => handleSaveMetadata(msg.id)}>
+                                          <i className="ri-save-line me-2 text-muted" />
                                           Save Metadata
                                         </Dropdown.Item>
                                         <Dropdown.Divider />
                                         <Dropdown.Item className="text-danger" onClick={() => handleDeleteMessage(msg.id)}>
+                                          <i className="ri-delete-bin-line me-2" />
                                           Delete Message
                                         </Dropdown.Item>
                                       </Dropdown.Menu>
