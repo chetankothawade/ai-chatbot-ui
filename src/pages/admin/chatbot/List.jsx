@@ -391,155 +391,6 @@ const Chatbot = () => {
     }, 20);
   }, [appendAssistantText]);
 
-  const transcribeVoiceBlob = useCallback(
-    async (blob, mimeType) => {
-      const extension = getVoiceFileExtension(mimeType);
-      const file = new File([blob], `voice-input.${extension}`, {
-        type: mimeType || "audio/webm",
-      });
-      const formData = new FormData();
-      formData.append("audio", file);
-
-      setTranscribingVoice(true);
-
-      const controller = new AbortController();
-      voiceControllerRef.current = controller;
-
-      try {
-        const response = await chatbotService.transcribeAudio(formData, controller.signal);
-        const transcript = response?.data?.data?.text?.trim() || "";
-
-        if (!transcript) {
-          toast.error("No speech detected");
-          return;
-        }
-
-        setInput("");
-        toast.success("Voice transcribed and sent");
-        await sendMessage(transcript);
-      } catch (error) {
-        if (!isCanceledStreamError(error)) {
-          toast.error(
-            error?.response?.data?.message || "Voice transcription failed"
-          );
-        }
-      } finally {
-        voiceControllerRef.current = null;
-        setTranscribingVoice(false);
-      }
-    },
-    [sendMessage]
-  );
-
-  const stopVoiceRecording = useCallback(() => {
-    const recorder = mediaRecorderRef.current;
-
-    if (!recorder) return;
-
-    if (recorder.state !== "inactive") {
-      recorder.stop();
-    }
-
-    mediaRecorderRef.current = null;
-    setRecording(false);
-    stopRecordingTimer();
-  }, [stopRecordingTimer]);
-
-  const startVoiceRecording = useCallback(async () => {
-    if (!activeChat?.id) {
-      toast.error("Create or select a chat first");
-      return;
-    }
-
-    if (
-      typeof navigator === "undefined" ||
-      !navigator.mediaDevices?.getUserMedia ||
-      typeof window === "undefined" ||
-      typeof window.MediaRecorder === "undefined"
-    ) {
-      toast.error("Voice recording is not supported in this browser");
-      return;
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeType = getVoiceRecordingMimeType();
-      const recorder = mimeType
-        ? new window.MediaRecorder(stream, { mimeType })
-        : new window.MediaRecorder(stream);
-
-      recordingStreamRef.current = stream;
-      mediaRecorderRef.current = recorder;
-      recordingChunksRef.current = [];
-      recordingMimeTypeRef.current = recorder.mimeType || mimeType || "audio/webm";
-      setRecordingSeconds(0);
-      setRecording(true);
-      startLevelMonitor(stream);
-
-      recorder.ondataavailable = (event) => {
-        if (event.data && event.data.size > 0) {
-          recordingChunksRef.current.push(event.data);
-        }
-      };
-
-      recorder.onerror = () => {
-        stopRecordingTimer();
-        stopLevelMonitor();
-        releaseRecordingStream();
-        mediaRecorderRef.current = null;
-        setRecording(false);
-        toast.error("Voice recording failed");
-      };
-
-      recorder.onstop = async () => {
-        stopRecordingTimer();
-        stopLevelMonitor();
-        releaseRecordingStream();
-
-        const recordedBlob = new Blob(recordingChunksRef.current, {
-          type: recordingMimeTypeRef.current || "audio/webm",
-        });
-
-        recordingChunksRef.current = [];
-
-        if (recordedBlob.size === 0) {
-          toast.error("Recorded audio was empty");
-          return;
-        }
-
-        await transcribeVoiceBlob(recordedBlob, recordingMimeTypeRef.current || "audio/webm");
-      };
-
-      recorder.start(250);
-      recordingTimerRef.current = setInterval(() => {
-        setRecordingSeconds((prev) => {
-          const nextValue = prev + 1;
-
-          if (nextValue >= MAX_RECORDING_SECONDS && recorder.state !== "inactive") {
-            recorder.stop();
-          }
-
-          return nextValue;
-        });
-      }, 1000);
-    } catch {
-      stopLevelMonitor();
-      releaseRecordingStream();
-      setRecording(false);
-      stopRecordingTimer();
-      toast.error("Microphone permission is required for voice input");
-    }
-  }, [activeChat?.id, releaseRecordingStream, startLevelMonitor, stopLevelMonitor, stopRecordingTimer, transcribeVoiceBlob]);
-
-  const handleVoiceInput = useCallback(() => {
-    if (recording) {
-      stopVoiceRecording();
-      return;
-    }
-
-    startVoiceRecording();
-  }, [recording, startVoiceRecording, stopVoiceRecording]);
-
   // Loads a page of chats and manages pagination state based on backend response.
   const loadChatsPage = useCallback(async ({ cursor = null, append = false } = {}) => {
     try {
@@ -695,6 +546,153 @@ const Chatbot = () => {
       transcribingVoice,
     ]
   );
+
+  const transcribeVoiceBlob = useCallback(
+    async (blob, mimeType) => {
+      const extension = getVoiceFileExtension(mimeType);
+      const file = new File([blob], `voice-input.${extension}`, {
+        type: mimeType || "audio/webm",
+      });
+      const formData = new FormData();
+      formData.append("audio", file);
+
+      setTranscribingVoice(true);
+
+      const controller = new AbortController();
+      voiceControllerRef.current = controller;
+
+      try {
+        const response = await chatbotService.transcribeAudio(formData, controller.signal);
+        const transcript = response?.data?.data?.text?.trim() || "";
+
+        if (!transcript) {
+          toast.error("No speech detected");
+          return;
+        }
+
+        setInput("");
+        toast.success("Voice transcribed and sent");
+        await sendMessage(transcript);
+      } catch (error) {
+        if (!isCanceledStreamError(error)) {
+          toast.error(error?.response?.data?.message || "Voice transcription failed");
+        }
+      } finally {
+        voiceControllerRef.current = null;
+        setTranscribingVoice(false);
+      }
+    },
+    [sendMessage]
+  );
+
+  const stopVoiceRecording = useCallback(() => {
+    const recorder = mediaRecorderRef.current;
+
+    if (!recorder) return;
+
+    if (recorder.state !== "inactive") {
+      recorder.stop();
+    }
+
+    mediaRecorderRef.current = null;
+    setRecording(false);
+    stopRecordingTimer();
+  }, [stopRecordingTimer]);
+
+  const startVoiceRecording = useCallback(async () => {
+    if (!activeChat?.id) {
+      toast.error("Create or select a chat first");
+      return;
+    }
+
+    if (
+      typeof navigator === "undefined" ||
+      !navigator.mediaDevices?.getUserMedia ||
+      typeof window === "undefined" ||
+      typeof window.MediaRecorder === "undefined"
+    ) {
+      toast.error("Voice recording is not supported in this browser");
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = getVoiceRecordingMimeType();
+      const recorder = mimeType
+        ? new window.MediaRecorder(stream, { mimeType })
+        : new window.MediaRecorder(stream);
+
+      recordingStreamRef.current = stream;
+      mediaRecorderRef.current = recorder;
+      recordingChunksRef.current = [];
+      recordingMimeTypeRef.current = recorder.mimeType || mimeType || "audio/webm";
+      setRecordingSeconds(0);
+      setRecording(true);
+      startLevelMonitor(stream);
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          recordingChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onerror = () => {
+        stopRecordingTimer();
+        stopLevelMonitor();
+        releaseRecordingStream();
+        mediaRecorderRef.current = null;
+        setRecording(false);
+        toast.error("Voice recording failed");
+      };
+
+      recorder.onstop = async () => {
+        stopRecordingTimer();
+        stopLevelMonitor();
+        releaseRecordingStream();
+
+        const recordedBlob = new Blob(recordingChunksRef.current, {
+          type: recordingMimeTypeRef.current || "audio/webm",
+        });
+
+        recordingChunksRef.current = [];
+
+        if (recordedBlob.size === 0) {
+          toast.error("Recorded audio was empty");
+          return;
+        }
+
+        await transcribeVoiceBlob(recordedBlob, recordingMimeTypeRef.current || "audio/webm");
+      };
+
+      recorder.start(250);
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds((prev) => {
+          const nextValue = prev + 1;
+
+          if (nextValue >= MAX_RECORDING_SECONDS && recorder.state !== "inactive") {
+            recorder.stop();
+          }
+
+          return nextValue;
+        });
+      }, 1000);
+    } catch {
+      stopLevelMonitor();
+      releaseRecordingStream();
+      setRecording(false);
+      stopRecordingTimer();
+      toast.error("Microphone permission is required for voice input");
+    }
+  }, [activeChat?.id, releaseRecordingStream, startLevelMonitor, stopLevelMonitor, stopRecordingTimer, transcribeVoiceBlob]);
+
+  const handleVoiceInput = useCallback(() => {
+    if (recording) {
+      stopVoiceRecording();
+      return;
+    }
+
+    startVoiceRecording();
+  }, [recording, startVoiceRecording, stopVoiceRecording]);
 
   // Creates a fresh chat session and refreshes sidebar list.
   const handleNewChat = async () => {
@@ -1175,8 +1173,9 @@ const Chatbot = () => {
     () => () => {
       streamControllerRef.current?.abort();
       voiceControllerRef.current?.abort();
-      if (mediaRecorderRef.current?.state !== "inactive") {
-        mediaRecorderRef.current.stop();
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state !== "inactive") {
+        recorder.stop();
       }
       mediaRecorderRef.current = null;
       stopLevelMonitor();
