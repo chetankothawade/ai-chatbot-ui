@@ -168,11 +168,40 @@ const isCanceledStreamError = (error) =>
   error?.code === "ERR_CANCELED" ||
   String(error?.message || "").toLowerCase() === "canceled";
 
+const VOICE_MIME_CANDIDATES = [
+  "audio/webm;codecs=opus",
+  "audio/webm",
+  "audio/ogg;codecs=opus",
+  "audio/mp4",
+];
+
+const getVoiceRecordingMimeType = () => {
+  if (typeof window === "undefined" || typeof window.MediaRecorder === "undefined") {
+    return "";
+  }
+
+  return (
+    VOICE_MIME_CANDIDATES.find((type) => window.MediaRecorder.isTypeSupported?.(type)) || ""
+  );
+};
+
+const getVoiceFileExtension = (mimeType) => {
+  if (mimeType.includes("ogg")) return "ogg";
+  if (mimeType.includes("mp4")) return "m4a";
+  return "webm";
+};
+
+const MAX_RECORDING_SECONDS = 120;
+
 const Chatbot = () => {
   // Shared panel height keeps sidebar and chat area visually aligned.
   const panelHeight = "clamp(520px, calc(100dvh - 250px), 760px)";
 
   const [sending, setSending] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [transcribingVoice, setTranscribingVoice] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [recordingLevel, setRecordingLevel] = useState(0);
 
   const [chats, setChats] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -202,7 +231,17 @@ const Chatbot = () => {
   // Refs for managing scroll, streaming, and typing effects.
   const bottomRef = useRef(null);
   const streamControllerRef = useRef(null);
+  const voiceControllerRef = useRef(null);
   const typingIntervalRef = useRef(null);
+  const recordingTimerRef = useRef(null);
+  const levelAnimationFrameRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const recordingStreamRef = useRef(null);
+  const recordingChunksRef = useRef([]);
+  const recordingMimeTypeRef = useRef("");
+  const audioContextRef = useRef(null);
+  const analyserRef = useRef(null);
+  const audioSourceRef = useRef(null);
   const typingBufferRef = useRef("");
   const draftAssistantIdRef = useRef(null);
   const chatListRef = useRef(null);
@@ -243,6 +282,84 @@ const Chatbot = () => {
     }
   }, []);
 
+  const stopRecordingTimer = useCallback(() => {
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+  }, []);
+
+  const releaseRecordingStream = useCallback(() => {
+    if (recordingStreamRef.current) {
+      recordingStreamRef.current.getTracks().forEach((track) => track.stop());
+      recordingStreamRef.current = null;
+    }
+  }, []);
+
+  const stopLevelMonitor = useCallback(() => {
+    if (levelAnimationFrameRef.current) {
+      cancelAnimationFrame(levelAnimationFrameRef.current);
+      levelAnimationFrameRef.current = null;
+    }
+
+    if (audioSourceRef.current) {
+      audioSourceRef.current.disconnect();
+      audioSourceRef.current = null;
+    }
+
+    if (analyserRef.current) {
+      analyserRef.current.disconnect();
+      analyserRef.current = null;
+    }
+
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+
+    setRecordingLevel(0);
+  }, []);
+
+  const startLevelMonitor = useCallback((stream) => {
+    if (typeof window === "undefined") return;
+
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+
+    if (!AudioContextClass) return;
+
+    const audioContext = new AudioContextClass();
+    const analyser = audioContext.createAnalyser();
+    const source = audioContext.createMediaStreamSource(stream);
+    const data = new Uint8Array(analyser.fftSize);
+
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.8;
+
+    source.connect(analyser);
+
+    audioContextRef.current = audioContext;
+    analyserRef.current = analyser;
+    audioSourceRef.current = source;
+
+    const updateLevel = () => {
+      if (!analyserRef.current) return;
+
+      analyserRef.current.getByteTimeDomainData(data);
+
+      let sum = 0;
+      for (let i = 0; i < data.length; i += 1) {
+        const normalized = (data[i] - 128) / 128;
+        sum += normalized * normalized;
+      }
+
+      const rms = Math.sqrt(sum / data.length);
+      setRecordingLevel(Math.min(1, rms * 3.5));
+      levelAnimationFrameRef.current = requestAnimationFrame(updateLevel);
+    };
+
+    updateLevel();
+  }, []);
+
   // Appends streamed assistant text to the active draft message only.
   const appendAssistantText = useCallback((text) => {
     const draftId = draftAssistantIdRef.current;
@@ -273,6 +390,155 @@ const Chatbot = () => {
       appendAssistantText(step);
     }, 20);
   }, [appendAssistantText]);
+
+  const transcribeVoiceBlob = useCallback(
+    async (blob, mimeType) => {
+      const extension = getVoiceFileExtension(mimeType);
+      const file = new File([blob], `voice-input.${extension}`, {
+        type: mimeType || "audio/webm",
+      });
+      const formData = new FormData();
+      formData.append("audio", file);
+
+      setTranscribingVoice(true);
+
+      const controller = new AbortController();
+      voiceControllerRef.current = controller;
+
+      try {
+        const response = await chatbotService.transcribeAudio(formData, controller.signal);
+        const transcript = response?.data?.data?.text?.trim() || "";
+
+        if (!transcript) {
+          toast.error("No speech detected");
+          return;
+        }
+
+        setInput("");
+        toast.success("Voice transcribed and sent");
+        await sendMessage(transcript);
+      } catch (error) {
+        if (!isCanceledStreamError(error)) {
+          toast.error(
+            error?.response?.data?.message || "Voice transcription failed"
+          );
+        }
+      } finally {
+        voiceControllerRef.current = null;
+        setTranscribingVoice(false);
+      }
+    },
+    [sendMessage]
+  );
+
+  const stopVoiceRecording = useCallback(() => {
+    const recorder = mediaRecorderRef.current;
+
+    if (!recorder) return;
+
+    if (recorder.state !== "inactive") {
+      recorder.stop();
+    }
+
+    mediaRecorderRef.current = null;
+    setRecording(false);
+    stopRecordingTimer();
+  }, [stopRecordingTimer]);
+
+  const startVoiceRecording = useCallback(async () => {
+    if (!activeChat?.id) {
+      toast.error("Create or select a chat first");
+      return;
+    }
+
+    if (
+      typeof navigator === "undefined" ||
+      !navigator.mediaDevices?.getUserMedia ||
+      typeof window === "undefined" ||
+      typeof window.MediaRecorder === "undefined"
+    ) {
+      toast.error("Voice recording is not supported in this browser");
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = getVoiceRecordingMimeType();
+      const recorder = mimeType
+        ? new window.MediaRecorder(stream, { mimeType })
+        : new window.MediaRecorder(stream);
+
+      recordingStreamRef.current = stream;
+      mediaRecorderRef.current = recorder;
+      recordingChunksRef.current = [];
+      recordingMimeTypeRef.current = recorder.mimeType || mimeType || "audio/webm";
+      setRecordingSeconds(0);
+      setRecording(true);
+      startLevelMonitor(stream);
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          recordingChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onerror = () => {
+        stopRecordingTimer();
+        stopLevelMonitor();
+        releaseRecordingStream();
+        mediaRecorderRef.current = null;
+        setRecording(false);
+        toast.error("Voice recording failed");
+      };
+
+      recorder.onstop = async () => {
+        stopRecordingTimer();
+        stopLevelMonitor();
+        releaseRecordingStream();
+
+        const recordedBlob = new Blob(recordingChunksRef.current, {
+          type: recordingMimeTypeRef.current || "audio/webm",
+        });
+
+        recordingChunksRef.current = [];
+
+        if (recordedBlob.size === 0) {
+          toast.error("Recorded audio was empty");
+          return;
+        }
+
+        await transcribeVoiceBlob(recordedBlob, recordingMimeTypeRef.current || "audio/webm");
+      };
+
+      recorder.start(250);
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds((prev) => {
+          const nextValue = prev + 1;
+
+          if (nextValue >= MAX_RECORDING_SECONDS && recorder.state !== "inactive") {
+            recorder.stop();
+          }
+
+          return nextValue;
+        });
+      }, 1000);
+    } catch {
+      stopLevelMonitor();
+      releaseRecordingStream();
+      setRecording(false);
+      stopRecordingTimer();
+      toast.error("Microphone permission is required for voice input");
+    }
+  }, [activeChat?.id, releaseRecordingStream, startLevelMonitor, stopLevelMonitor, stopRecordingTimer, transcribeVoiceBlob]);
+
+  const handleVoiceInput = useCallback(() => {
+    if (recording) {
+      stopVoiceRecording();
+      return;
+    }
+
+    startVoiceRecording();
+  }, [recording, startVoiceRecording, stopVoiceRecording]);
 
   // Loads a page of chats and manages pagination state based on backend response.
   const loadChatsPage = useCallback(async ({ cursor = null, append = false } = {}) => {
@@ -363,52 +629,72 @@ const Chatbot = () => {
   );
 
   // Sends user message and streams assistant response with typing effect.
-  const sendMessage = async () => {
-    if (!input.trim() || !activeChat?.id || sending) return;
+  const sendMessage = useCallback(
+    async (messageOverride = null) => {
+      const resolvedMessage =
+        typeof messageOverride === "string" ? messageOverride.trim() : input.trim();
 
-    const currentInput = input.trim();
-    const draftAssistantId = `draft-${Date.now()}`;
+      if (!resolvedMessage || !activeChat?.id || sending || recording || transcribingVoice) return;
 
-    setMessages((prev) => [
-      ...prev,
-      { role: "user", content: currentInput },
-      { id: draftAssistantId, role: "assistant", content: "" },
-    ]);
+      const currentInput = resolvedMessage;
+      const draftAssistantId = `draft-${Date.now()}`;
 
-    setInput("");
-    setSending(true);
-    typingBufferRef.current = "";
-    draftAssistantIdRef.current = draftAssistantId;
+      setMessages((prev) => [
+        ...prev,
+        { role: "user", content: currentInput },
+        { id: draftAssistantId, role: "assistant", content: "" },
+      ]);
 
-    const controller = new AbortController();
-    streamControllerRef.current = controller;
-
-    try {
-      autoGenerateChatTitleIfNeeded(activeChat.id, currentInput);
-
-      await chatbotService.streamMessage({
-        chatId: activeChat.id,
-        message: currentInput,
-        signal: controller.signal,
-        onChunk: (chunk) => {
-          typingBufferRef.current += chunk;
-          startTypingTicker();
-        },
-      });
-
-      loadFirstPage();
-    } catch (error) {
-      if (!isCanceledStreamError(error)) {
-        toast.error("Streaming failed");
+      if (typeof messageOverride !== "string") {
+        setInput("");
       }
-    } finally {
-      flushTypingBuffer();
-      stopTypingTicker();
-      streamControllerRef.current = null;
-      draftAssistantIdRef.current = null;
-      setSending(false);
-    }
-  };
+
+      setSending(true);
+      typingBufferRef.current = "";
+      draftAssistantIdRef.current = draftAssistantId;
+
+      const controller = new AbortController();
+      streamControllerRef.current = controller;
+
+      try {
+        autoGenerateChatTitleIfNeeded(activeChat.id, currentInput);
+
+        await chatbotService.streamMessage({
+          chatId: activeChat.id,
+          message: currentInput,
+          signal: controller.signal,
+          onChunk: (chunk) => {
+            typingBufferRef.current += chunk;
+            startTypingTicker();
+          },
+        });
+
+        loadFirstPage();
+      } catch (error) {
+        if (!isCanceledStreamError(error)) {
+          toast.error("Streaming failed");
+        }
+      } finally {
+        flushTypingBuffer();
+        stopTypingTicker();
+        streamControllerRef.current = null;
+        draftAssistantIdRef.current = null;
+        setSending(false);
+      }
+    },
+    [
+      activeChat?.id,
+      autoGenerateChatTitleIfNeeded,
+      flushTypingBuffer,
+      input,
+      loadFirstPage,
+      recording,
+      sending,
+      startTypingTicker,
+      stopTypingTicker,
+      transcribingVoice,
+    ]
+  );
 
   // Creates a fresh chat session and refreshes sidebar list.
   const handleNewChat = async () => {
@@ -810,6 +1096,13 @@ const Chatbot = () => {
     [chatsSource, chatFilter]
   );
 
+  const recordingTimerLabel = useMemo(() => {
+    const minutes = String(Math.floor(recordingSeconds / 60)).padStart(2, "0");
+    const seconds = String(recordingSeconds % 60).padStart(2, "0");
+
+    return `${minutes}:${seconds}`;
+  }, [recordingSeconds]);
+
   // Initial load.
   useEffect(() => {
     loadFirstPage();
@@ -860,13 +1153,38 @@ const Chatbot = () => {
     return () => clearInterval(intervalId);
   }, [sending]);
 
+  // Mobile browsers may suspend background tabs; stop cleanly if visibility changes mid-recording.
+  useEffect(() => {
+    if (!recording || typeof document === "undefined") return undefined;
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        stopVoiceRecording();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [recording, stopVoiceRecording]);
+
   // Cleanup for unmount: abort network stream and clear timers.
   useEffect(
     () => () => {
       streamControllerRef.current?.abort();
+      voiceControllerRef.current?.abort();
+      if (mediaRecorderRef.current?.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+      }
+      mediaRecorderRef.current = null;
+      stopLevelMonitor();
+      releaseRecordingStream();
+      stopRecordingTimer();
       stopTypingTicker();
     },
-    [stopTypingTicker]
+    [releaseRecordingStream, stopLevelMonitor, stopRecordingTimer, stopTypingTicker]
   );
 
   const addParticipantFields = [
@@ -1278,17 +1596,67 @@ const Chatbot = () => {
                       sendMessage();
                     }}
                   >
+                    {(recording || transcribingVoice) && (
+                      <div className="small mb-2 d-flex flex-wrap align-items-center gap-2">
+                        {recording ? (
+                          <>
+                            <span className="text-danger d-inline-flex align-items-center gap-1">
+                              <i className="ri-record-circle-fill" />
+                              Recording {recordingTimerLabel}
+                            </span>
+                            <div
+                              className="rounded-pill bg-light overflow-hidden"
+                              style={{ width: 120, height: 8 }}
+                              aria-hidden="true"
+                            >
+                              <div
+                                className="h-100 bg-danger"
+                                style={{
+                                  width: `${Math.max(8, recordingLevel * 100)}%`,
+                                  transition: "width 80ms linear",
+                                }}
+                              />
+                            </div>
+                            <span className="text-muted">Tap the mic again to stop and transcribe.</span>
+                          </>
+                        ) : (
+                          <span className="text-muted d-inline-flex align-items-center gap-1">
+                            <Spinner animation="border" size="sm" />
+                            Transcribing voice input...
+                          </span>
+                        )}
+                      </div>
+                    )}
                     <InputGroup>
                       <Form.Control
                         type="text"
-                        placeholder="Type your message..."
+                        placeholder={recording ? "Recording voice..." : "Type your message..."}
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
-                        disabled={!activeChat?.id || sending}
+                        disabled={!activeChat?.id || sending || transcribingVoice}
                         aria-label="Message input"
                       />
+                      <ButtonTooltip
+                        id="tt-voice"
+                        title={recording ? "Stop recording and transcribe" : "Record voice input"}
+                      >
+                        <Button
+                          type="button"
+                          variant={recording ? "danger" : "outline-secondary"}
+                          onClick={handleVoiceInput}
+                          disabled={!activeChat?.id || sending || transcribingVoice}
+                          className="d-inline-flex align-items-center justify-content-center"
+                          style={{ minWidth: 48, minHeight: 48, touchAction: "manipulation" }}
+                        >
+                          <i className={recording ? "ri-stop-circle-line" : "ri-mic-line"} />
+                        </Button>
+                      </ButtonTooltip>
                       <ButtonTooltip id="tt-send" title="Send message to assistant">
-                        <Button type="submit" variant="primary" disabled={!activeChat?.id || sending}>
+                        <Button
+                          type="submit"
+                          variant="primary"
+                          disabled={!activeChat?.id || sending || recording || transcribingVoice}
+                        >
                           Send
                         </Button>
                       </ButtonTooltip>

@@ -97,6 +97,18 @@ const chatbotService = {
   },
 
   /**
+   * Transcribe recorded/uploaded voice input into text.
+   */
+  transcribeAudio: (formData, signal) => {
+    return http.post("chat/messages/transcribe", formData, {
+      signal,
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    });
+  },
+
+  /**
    * List messages (supports filters/pagination)
    */
   listMessages: (params = {}) => {

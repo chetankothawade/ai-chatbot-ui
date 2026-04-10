@@ -1,62 +1,35 @@
-# AI Chatbot UI (React + Vite)
+# AI Chatbot UI
 
-Detailed documentation for the chatbot admin UI in this repository.
+React + Vite admin chat UI for managing chat sessions, streaming assistant responses, and voice input.
 
-## 1. Purpose
-
-The Chatbot UI provides an admin-facing chat workspace with:
-
-- Chat session management
-- Real-time assistant streaming
-- Message-level actions
-- Session context/model controls
-- Usage visibility
-- Participant add/remove management
-
-Primary screen:
-
-- `src/pages/admin/chatbot/List.jsx`
-
-Primary API service:
-
-- `src/services/chatbotService.jsx`
-
-## 2. Tech Stack
+## Tech Stack
 
 - React 19
 - Vite 7
-- React Bootstrap 5 + Bootstrap 5
 - Axios
+- React Bootstrap + Bootstrap 5
 - React Markdown
 - SimpleBar
 - SweetAlert2
 - React Hook Form
-- React Select
 
-## 3. Prerequisites
+## Requirements
 
-- Node.js 18+ (LTS recommended)
+- Node.js 18+
 - npm 9+
-- Laravel API running and reachable from UI
+- Laravel API running and reachable
 
-## 4. Environment
+## Environment
 
-This project currently uses `.env.development`.
-
-Required key:
+Create or update `.env.development`:
 
 ```env
 VITE_API_BASE_URL=http://localhost:8020/api/
-```
-
-Optional keys currently used in project:
-
-```env
 VITE_ENV_NAME=development
 VITE_SITE_NAME=NACK
 ```
 
-## 5. Setup and Run
+## Setup
 
 Install dependencies:
 
@@ -64,7 +37,7 @@ Install dependencies:
 npm install
 ```
 
-Run development server:
+Run dev server:
 
 ```bash
 npm run dev
@@ -76,63 +49,73 @@ Build production assets:
 npm run build
 ```
 
-Preview production build:
-
-```bash
-npm run preview
-```
-
 Lint:
 
 ```bash
 npm run lint
 ```
 
-## 6. Chatbot UI Features
+## Main Chat Module
 
-### 6.1 Sessions (left panel)
+Primary files:
 
-- Load sessions with cursor pagination
-- Search sessions
-- Filter sessions (`All`, `Today`, `Last 7 Days`)
-- Pin/unpin session
-- Rename session
-- Delete session
-- Create new chat
+- `src/pages/admin/chatbot/List.jsx`
+- `src/services/chatbotService.jsx`
 
-### 6.2 Conversation area (right panel)
+## Features
 
-- Select model per session
-- Edit session context
-- View overall usage
-- View chat-specific usage
-- Clear session messages
-- Send user messages
-- Stream assistant response with typing effect
-- Stop streaming response
-- Markdown rendering for assistant messages
-- Copy code block content
+### Sessions
 
-### 6.3 Message actions
+- load sessions with cursor pagination
+- search sessions
+- filter sessions
+- create chat
+- rename chat
+- pin and unpin chat
+- delete chat
 
-For persisted messages (non-draft):
+### Conversation
 
-- Regenerate assistant response
-- View metadata
-- Save metadata
-- Delete message
+- send typed messages
+- stream assistant replies with typing effect
+- stop in-progress stream
+- render markdown answers
+- copy code blocks
+- clear session messages
+- change session model
+- edit session context
 
-### 6.4 Participant management
+### Message Actions
 
-- Add participant via searchable user select
-- Remove participant via searchable participant select
-- Remove list now shows only users already added to that chat
+- regenerate assistant reply
+- view metadata
+- save metadata
+- delete message
 
-## 7. API Integration Map
+### Participants
 
-The UI expects API prefix `.../api/chat/*`.
+- add participant
+- remove participant
 
-### 7.1 Session endpoints
+### Voice Input
+
+- microphone button in the chat composer
+- browser recording using `MediaRecorder`
+- live audio level meter while recording
+- auto-stop after 120 seconds
+- mobile-safe stop on tab/background change
+- recorded audio uploaded to backend transcription endpoint
+- transcription auto-sent as a chat message after success
+
+## API Integration Map
+
+The UI expects API prefix:
+
+```text
+.../api/chat/*
+```
+
+### Sessions
 
 - `GET chat/sessions`
 - `POST chat/sessions`
@@ -144,33 +127,34 @@ The UI expects API prefix `.../api/chat/*`.
 - `PUT chat/sessions/{id}/context`
 - `DELETE chat/sessions/{id}/messages`
 
-### 7.2 Message endpoints
+### Messages
 
 - `POST chat/messages/send`
 - `POST chat/messages/stream`
+- `POST chat/messages/transcribe`
 - `GET chat/messages`
 - `POST chat/messages/{id}/regenerate`
 - `DELETE chat/messages/{id}`
 
-### 7.3 Metadata endpoints
+### Metadata
 
 - `GET chat/messages/{id}/metadata`
 - `POST chat/messages/{id}/metadata`
 
-### 7.4 Usage endpoints
+### Usage
 
 - `GET chat/usage`
 - `GET chat/usage/{chat_id}`
 
-### 7.5 Participants endpoints
+### Participants
 
 - `GET chat/sessions/{id}/participants`
 - `POST chat/sessions/{id}/participants`
 - `DELETE chat/sessions/{id}/participants/{user_id}`
 
-## 8. Important Payload Contracts
+## Important Payloads
 
-### 8.1 Stream message request
+### Stream Message
 
 ```json
 {
@@ -179,9 +163,29 @@ The UI expects API prefix `.../api/chat/*`.
 }
 ```
 
-### 8.2 Update context request
+### Voice Transcription Upload
 
-`context` is sent as object/array or null:
+Multipart form data:
+
+- `audio` file
+- `language` optional
+- `prompt` optional
+
+Example response:
+
+```json
+{
+  "status": true,
+  "message": "Voice transcribed",
+  "data": {
+    "text": "Create a summary of this conversation",
+    "language": "en",
+    "duration": 5.1
+  }
+}
+```
+
+### Update Context
 
 ```json
 {
@@ -191,7 +195,7 @@ The UI expects API prefix `.../api/chat/*`.
 }
 ```
 
-### 8.3 Add participant request
+### Add Participant
 
 ```json
 {
@@ -199,7 +203,7 @@ The UI expects API prefix `.../api/chat/*`.
 }
 ```
 
-### 8.4 Save metadata request
+### Save Metadata
 
 ```json
 {
@@ -210,109 +214,53 @@ The UI expects API prefix `.../api/chat/*`.
 }
 ```
 
-## 9. Response Normalization
+## Response Normalization
 
-Because some backend responses can vary, UI normalizes:
+The UI normalizes backend response variants for:
 
-- Sessions arrays (`data`, nested `data.data`, etc.)
-- Session details (`chat`, `session` wrappers)
-- Messages arrays (`messages`, `data.messages`, `data`)
-- Cursor pagination metadata
+- sessions arrays
+- session details
+- message arrays
+- cursor pagination metadata
 
-Normalization helpers are inside `List.jsx` near top of file.
-
-## 10. Search Behavior
-
-Session search in left panel uses:
-
-- `GET chat/sessions?search=<term>&limit=50`
-
-Note:
-
-- Endpoint `chat/search` returns message search results and is not used for session sidebar listing.
-
-## 11. Participant UX Behavior
-
-### Add User
-
-- Opens modal with `react-select`
-- Source: `users/getList`
-- Submit calls: `POST chat/sessions/{id}/participants`
-
-### Remove User
-
-- Opens modal with `react-select`
-- Source: `GET chat/sessions/{id}/participants`
-- Submit calls: `DELETE chat/sessions/{id}/participants/{user_id}`
-
-## 12. UI/UX Notes
-
-- 3-dot action toggles hide default bootstrap caret arrow (only dots visible)
-- Tooltips are attached to major action buttons
-- Streaming has stop control and typing cursor indication
-- Code blocks include copy-to-clipboard
-
-## 13. File Reference (Chatbot Module)
+Normalization helpers are in:
 
 - `src/pages/admin/chatbot/List.jsx`
-- `src/services/chatbotService.jsx`
-- `src/services/userService.jsx`
-- `src/components/FormFields/FormField.jsx`
-- `src/index.css` (chat-specific style tweaks)
 
-## 14. Common Issues and Fixes
+## UX Notes
 
-### Issue: Add participant fails
+- mic button toggles record and stop states
+- while recording, the text input stays visible and the voice meter updates live
+- while transcribing, send and mic actions are disabled
+- after transcription succeeds, the text is sent immediately instead of waiting in the input
+- streamed assistant replies still use the existing typing ticker behavior
 
-Check:
+## Build Status
 
-- `users/getList` returns valid users
-- Selected value is numeric `user_id`
-- `POST chat/sessions/{id}/participants` exists and is authenticated
+The frontend build now completes successfully with `npm run build`.
 
-### Issue: Remove participant list shows all users
+Non-blocking warnings may still appear for:
 
-Expected fix already integrated:
+- unresolved runtime asset references
+- large bundle chunks
 
-- Remove modal should call `GET chat/sessions/{id}/participants`
-- If still not correct, verify backend route/controller for participants index
+## QA Checklist
 
-### Issue: Context update fails (422)
+1. Create a new chat.
+2. Send a typed message and verify streaming response.
+3. Click mic and record voice.
+4. Stop recording and verify transcription is auto-sent.
+5. Confirm live meter moves while speaking.
+6. Confirm recording stops safely if tab is backgrounded.
+7. Rename and pin a chat.
+8. Edit session context and model.
+9. Add and remove participant.
+10. Open message actions and test metadata.
+11. Build with `npm run build`.
 
-Check:
+## Scripts
 
-- `context` request is JSON object/array/null
-- Route `PUT chat/sessions/{id}/context` exists
-
-### Issue: Message delete fails
-
-Check backend route points to `destroy` action:
-
-- `Route::delete('messages/{id}', [MessageController::class, 'destroy']);`
-
-## 15. Quick QA Checklist
-
-1. Create new chat.
-2. Send prompt and confirm streaming response appears.
-3. Rename chat and verify list updates.
-4. Pin/unpin chat and verify sort order.
-5. Edit context and verify save success.
-6. Change model and verify save success.
-7. Add participant from user list.
-8. Remove participant from participant-only list.
-9. Open message actions and test metadata save/view.
-10. Delete message and confirm it disappears.
-11. Clear messages and confirm chat body resets.
-12. Verify button tooltips and 3-dot toggle visuals.
-
-## 16. Scripts Summary
-
-- `npm run dev` - start dev server
-- `npm run build` - production build
-- `npm run preview` - preview build
-- `npm run lint` - lint code
-
----
-
-If you extend the chatbot (file upload, prompt templates, multi-model fallback, conversation export), update this README and `chatbotService.jsx` together so UI and API contracts stay aligned.
-# ai-chatbot-ui
+- `npm run dev`
+- `npm run build`
+- `npm run preview`
+- `npm run lint`
