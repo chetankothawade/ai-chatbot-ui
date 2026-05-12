@@ -97,6 +97,18 @@ const chatbotService = {
   },
 
   /**
+   * Send a message with one or more attachments.
+   */
+  sendMessageWithAttachments: (formData, signal) => {
+    return http.post("chat/messages/send", formData, {
+      signal,
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    });
+  },
+
+  /**
    * Transcribe recorded/uploaded voice input into text.
    */
   transcribeAudio: (formData, signal) => {

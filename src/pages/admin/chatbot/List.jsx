@@ -191,6 +191,26 @@ const getVoiceFileExtension = (mimeType) => {
   return "webm";
 };
 
+const MAX_CHAT_FILES = 5;
+const MAX_CHAT_FILE_SIZE = 10 * 1024 * 1024;
+
+const formatFileSize = (bytes = 0) => {
+  if (!bytes) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / 1024 ** exponent;
+  return `${value.toFixed(value >= 10 || exponent === 0 ? 0 : 1)} ${units[exponent]}`;
+};
+
+const fileToAttachmentPreview = (file, index) => ({
+  id: `pending-file-${index}-${file.name}`,
+  name: file.name,
+  size: file.size,
+  mime_type: file.type,
+  url: URL.createObjectURL(file),
+  pending: true,
+});
+
 const MAX_RECORDING_SECONDS = 120;
 
 const Chatbot = () => {
@@ -207,6 +227,7 @@ const Chatbot = () => {
   const [messages, setMessages] = useState([]);
   const [activeChat, setActiveChat] = useState(null);
   const [input, setInput] = useState("");
+  const [selectedFiles, setSelectedFiles] = useState([]);
 
   const [chatSearch, setChatSearch] = useState("");
   const [chatFilter, setChatFilter] = useState(CHAT_FILTERS.ALL);
@@ -239,6 +260,7 @@ const Chatbot = () => {
   const recordingStreamRef = useRef(null);
   const recordingChunksRef = useRef([]);
   const recordingMimeTypeRef = useRef("");
+  const fileInputRef = useRef(null);
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
   const audioSourceRef = useRef(null);
@@ -479,16 +501,118 @@ const Chatbot = () => {
     [activeChat?.title, chats, patchChatState]
   );
 
+  const handleFileSelect = (event) => {
+    const incomingFiles = Array.from(event.target.files || []);
+    if (event.target) {
+      event.target.value = "";
+    }
+
+    if (!incomingFiles.length) return;
+
+    setSelectedFiles((prev) => {
+      const availableSlots = MAX_CHAT_FILES - prev.length;
+      if (availableSlots <= 0) {
+        toast.error(`You can attach up to ${MAX_CHAT_FILES} files`);
+        return prev;
+      }
+
+      const accepted = [];
+      incomingFiles.slice(0, availableSlots).forEach((file) => {
+        if (file.size > MAX_CHAT_FILE_SIZE) {
+          toast.error(`${file.name} is larger than 10 MB`);
+          return;
+        }
+        accepted.push(file);
+      });
+
+      if (incomingFiles.length > availableSlots) {
+        toast.error(`Only ${MAX_CHAT_FILES} files can be attached`);
+      }
+
+      return [...prev, ...accepted];
+    });
+  };
+
+  const removeSelectedFile = (indexToRemove) => {
+    setSelectedFiles((prev) => prev.filter((_, index) => index !== indexToRemove));
+  };
+
   // Sends user message and streams assistant response with typing effect.
   const sendMessage = useCallback(
     async (messageOverride = null) => {
       const resolvedMessage =
         typeof messageOverride === "string" ? messageOverride.trim() : input.trim();
+      const filesToSend = typeof messageOverride === "string" ? [] : selectedFiles;
 
-      if (!resolvedMessage || !activeChat?.id || sending || recording || transcribingVoice) return;
+      if (
+        (!resolvedMessage && filesToSend.length === 0) ||
+        !activeChat?.id ||
+        sending ||
+        recording ||
+        transcribingVoice
+      ) return;
 
       const currentInput = resolvedMessage;
       const draftAssistantId = `draft-${Date.now()}`;
+      const pendingUserId = `pending-user-${Date.now()}`;
+
+      if (filesToSend.length > 0) {
+        const previewAttachments = filesToSend.map(fileToAttachmentPreview);
+        const formData = new FormData();
+        formData.append("chat_id", activeChat.id);
+        if (currentInput) {
+          formData.append("message", currentInput);
+        }
+        filesToSend.forEach((file) => formData.append("attachments[]", file));
+
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: pendingUserId,
+            role: "user",
+            content: currentInput || `Uploaded ${filesToSend.length} attachment${filesToSend.length > 1 ? "s" : ""}`,
+            attachments: previewAttachments,
+          },
+          { id: draftAssistantId, role: "assistant", content: "" },
+        ]);
+        setInput("");
+        setSelectedFiles([]);
+        setSending(true);
+
+        const controller = new AbortController();
+        streamControllerRef.current = controller;
+
+        try {
+          autoGenerateChatTitleIfNeeded(activeChat.id, currentInput || filesToSend[0]?.name || "Attachment");
+          const response = await chatbotService.sendMessageWithAttachments(formData, controller.signal);
+          const payload = response?.data?.data || {};
+          const userMessage = payload.user_message;
+          const assistantMessage = payload.assistant_message;
+
+          setMessages((prev) =>
+            prev.map((msg) => {
+              if (msg.id === pendingUserId) return userMessage || msg;
+              if (msg.id === draftAssistantId) return assistantMessage || msg;
+              return msg;
+            })
+          );
+
+          loadFirstPage();
+        } catch (error) {
+          if (!isCanceledStreamError(error)) {
+            toast.error(error?.response?.data?.message || "Message upload failed");
+          }
+          setMessages((prev) =>
+            prev.filter((msg) => msg.id !== pendingUserId && msg.id !== draftAssistantId)
+          );
+        } finally {
+          previewAttachments.forEach((attachment) => URL.revokeObjectURL(attachment.url));
+          streamControllerRef.current = null;
+          setSending(false);
+        }
+
+        return;
+      }
 
       setMessages((prev) => [
         ...prev,
@@ -540,6 +664,7 @@ const Chatbot = () => {
       input,
       loadFirstPage,
       recording,
+      selectedFiles,
       sending,
       startTypingTicker,
       stopTypingTicker,
@@ -1459,6 +1584,7 @@ const Chatbot = () => {
                           );
                           const messageKey = msg.id || index;
                           const showMessageActions = hoveredMessageKey === messageKey;
+                          const attachments = Array.isArray(msg.attachments) ? msg.attachments : [];
 
                           return (
                             <div
@@ -1522,6 +1648,47 @@ const Chatbot = () => {
                                 </ReactMarkdown>
                               ) : (
                                 msg.content
+                              )}
+                              {attachments.length > 0 && (
+                                <div className="mt-2 d-flex flex-column gap-2">
+                                  {attachments.map((attachment) => {
+                                    const isImage = String(attachment.mime_type || "").startsWith("image/");
+                                    return (
+                                      <a
+                                        key={attachment.id || attachment.name}
+                                        href={attachment.url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="d-flex align-items-center gap-2 text-decoration-none border rounded-2 bg-white px-2 py-2"
+                                      >
+                                        {isImage ? (
+                                          <img
+                                            src={attachment.url}
+                                            alt={attachment.name}
+                                            className="rounded object-fit-cover"
+                                            style={{ width: 36, height: 36 }}
+                                          />
+                                        ) : (
+                                          <span
+                                            className="d-inline-flex align-items-center justify-content-center rounded bg-light text-muted"
+                                            style={{ width: 36, height: 36, flex: "0 0 36px" }}
+                                          >
+                                            <i className="ri-attachment-2" />
+                                          </span>
+                                        )}
+                                        <span className="min-w-0">
+                                          <span className="d-block text-truncate text-body" style={{ maxWidth: 280 }}>
+                                            {attachment.name || "Attachment"}
+                                          </span>
+                                          <small className="text-muted">
+                                            {formatFileSize(attachment.size)}
+                                            {attachment.pending ? " - uploading" : ""}
+                                          </small>
+                                        </span>
+                                      </a>
+                                    );
+                                  })}
+                                </div>
                               )}
                               {sending && msg.id === draftAssistantIdRef.current && (
                                 <span className="ms-1 fw-bold text-muted">{blinkOn ? "|" : " "}</span>
@@ -1626,7 +1793,38 @@ const Chatbot = () => {
                         )}
                       </div>
                     )}
+                    {selectedFiles.length > 0 && (
+                      <div className="mb-2 d-flex flex-wrap gap-2">
+                        {selectedFiles.map((file, index) => (
+                          <span
+                            key={`${file.name}-${file.size}-${index}`}
+                            className="badge bg-light text-body border d-inline-flex align-items-center gap-2"
+                          >
+                            <i className="ri-attachment-2" />
+                            <span className="text-truncate" style={{ maxWidth: 180 }}>
+                              {file.name}
+                            </span>
+                            <small className="text-muted">{formatFileSize(file.size)}</small>
+                            <button
+                              type="button"
+                              className="btn-close"
+                              aria-label={`Remove ${file.name}`}
+                              onClick={() => removeSelectedFile(index)}
+                              style={{ fontSize: 8 }}
+                            />
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     <InputGroup>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        className="d-none"
+                        multiple
+                        accept=".txt,.csv,.json,.pdf,.doc,.docx,image/jpeg,image/png,image/webp,image/gif"
+                        onChange={handleFileSelect}
+                      />
                       <Form.Control
                         type="text"
                         placeholder={recording ? "Recording voice..." : "Type your message..."}
@@ -1635,6 +1833,18 @@ const Chatbot = () => {
                         disabled={!activeChat?.id || sending || transcribingVoice}
                         aria-label="Message input"
                       />
+                      <ButtonTooltip id="tt-attach" title="Attach files">
+                        <Button
+                          type="button"
+                          variant="outline-secondary"
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={!activeChat?.id || sending || recording || transcribingVoice}
+                          className="d-inline-flex align-items-center justify-content-center"
+                          style={{ minWidth: 48, minHeight: 48, touchAction: "manipulation" }}
+                        >
+                          <i className="ri-attachment-2" />
+                        </Button>
+                      </ButtonTooltip>
                       <ButtonTooltip
                         id="tt-voice"
                         title={recording ? "Stop recording and transcribe" : "Record voice input"}
@@ -1654,7 +1864,13 @@ const Chatbot = () => {
                         <Button
                           type="submit"
                           variant="primary"
-                          disabled={!activeChat?.id || sending || recording || transcribingVoice}
+                          disabled={
+                            !activeChat?.id ||
+                            sending ||
+                            recording ||
+                            transcribingVoice ||
+                            (!input.trim() && selectedFiles.length === 0)
+                          }
                         >
                           Send
                         </Button>
